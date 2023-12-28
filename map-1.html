@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV Map</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css" type="text/css">
+    <style>
+        .map {
+            height: 100vh;
+            width: 100%;
+        }
+        .overlay {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            background: rgba(255,255,255,0.8);
+            transition: .3s ease;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            transform: translateY(100%);
+        }
+        .overlay.active {
+            transform: translateY(0);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: #4CAF50;
+            color: white;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js" type="text/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+</head>
+<body>
+    <h2>CSV Map</h2>
+    <input type="file" id="csvFile" name="files"/>
+    <div id="map" class="map"></div>
+    <div id="info" class="overlay"></div>
+    <table id="data-table">
+        <thead>
+            <tr>
+                <th>Indirizzo</th>
+                <th>Prezzo Base</th>
+                <th>Data Vendita</th>
+                <th>URL Annuncio</th>
+                <th>Parsed Address</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <script type="text/javascript">
+        var map = new ol.Map({
+            target: 'map',
+            layers: [
+                new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                })
+            ],
+            view: new ol.View({
+                center: ol.proj.fromLonLat([0, 0]),
+                zoom: 2
+            }),
+            interactions: ol.interaction.defaults.defaults({ onFocusOnly: true })
+        });
+
+        var coordinates = [];
+
+        document.getElementById('csvFile').addEventListener('change', handleFileSelect, false);
+        function handleFileSelect(evt) {
+            var file = evt.target.files[0];
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                complete: function(results) {
+                    results.data.forEach(function(item) {
+                        if (item.coordinate) {
+                            var coordParts = item.coordinate.replace(/[\(\)]/g, '').split(',').map(Number);
+                            var coord = ol.proj.fromLonLat([coordParts[1], coordParts[0]]);
+                            coordinates.push(coord);
+                            var feature = new ol.Feature(new ol.geom.Point(coord));
+
+                            feature.setStyle(new ol.style.Style({
+                                image: new ol.style.Circle({
+                                    radius: 7,
+                                    fill: new ol.style.Fill({color: 'red'}),
+                                    stroke: new ol.style.Stroke({color: 'white', width: 2})
+                                })
+                            }));
+
+                            feature.set('indirizzo', item.indirizzo);
+                            feature.set('prezzo_base', item.prezzo_base);
+                            feature.set('data_vendita', item.data_vendita);
+                            feature.set('url_annuncio', item.url_annuncio);
+                            feature.set('parsed_address', item.parsed_address);
+
+                            var vectorSource = new ol.source.Vector({
+                                features: [feature]
+                            });
+
+                            var vectorLayer = new ol.layer.Vector({
+                                source: vectorSource
+                            });
+
+                            map.addLayer(vectorLayer);
+                        } else {
+                            var table = document.getElementById('data-table');
+                            var row = table.insertRow(-1);
+                            var cell1 = row.insertCell(0);
+                            var cell2 = row.insertCell(1);
+                            var cell3 = row.insertCell(2);
+                            var cell4 = row.insertCell(3);
+                            var cell5 = row.insertCell(4);
+                            cell1.innerHTML = item.indirizzo;
+                            cell2.innerHTML = item.prezzo_base;
+                            cell3.innerHTML = item.data_vendita;
+                            cell4.innerHTML = '<a href="' + item.url_annuncio + '" target="_blank">' + item.url_annuncio + '</a>';
+                            cell5.innerHTML = item.parsed_address;
+                        }
+                    });
+
+                    var extent = ol.extent.boundingExtent(coordinates);
+                    map.getView().fit(extent, map.getSize());
+                }
+            });
+        }
+
+        map.on('click', function(evt) {
+            map.forEachFeatureAtPixel(evt.pixel, function(feature, layer) {
+                var indirizzo = feature.get('indirizzo');
+                var prezzo_base = feature.get('prezzo_base');
+                var data_vendita = feature.get('data_vendita');
+                var url_annuncio = feature.get('url_annuncio');
+                var parsed_address = feature.get('parsed_address');
+
+                var info = "Indirizzo: " + indirizzo + "<br>Indirizzo geolocalizzato: " + parsed_address+ "<br>Prezzo Base: " + prezzo_base + "<br>Data Vendita: " + data_vendita + "<br>URL Annuncio: <a href='" + url_annuncio + "' target='_blank'>" + url_annuncio + "</a>";
+                document.getElementById('info').innerHTML = info;
+                document.getElementById('info').classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>
