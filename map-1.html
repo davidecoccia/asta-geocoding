@@ -44,6 +44,7 @@
 <body>
     <h2>CSV Map</h2>
     <input type="file" id="csvFile" name="files"/>
+    <input type="text" id="addressInput" placeholder="Type address here...">
     <div id="map" class="map"></div>
     <div id="info" class="overlay"></div>
     <table id="data-table">
@@ -73,66 +74,93 @@
             interactions: ol.interaction.defaults.defaults({ onFocusOnly: true })
         });
 
-        var coordinates = [];
+
+        
 
         document.getElementById('csvFile').addEventListener('change', handleFileSelect, false);
-        function handleFileSelect(evt) {
-            var file = evt.target.files[0];
-            Papa.parse(file, {
-                header: true,
-                dynamicTyping: true,
-                complete: function(results) {
-                    results.data.forEach(function(item) {
-                        if (item.coordinate) {
-                            var coordParts = item.coordinate.replace(/[\(\)]/g, '').split(',').map(Number);
-                            var coord = ol.proj.fromLonLat([coordParts[1], coordParts[0]]);
-                            coordinates.push(coord);
-                            var feature = new ol.Feature(new ol.geom.Point(coord));
+document.getElementById('addressInput').addEventListener('keyup', function(event) {
+    if (event.key === "Enter") {
+        handleAddressInput(event);
+    }
+}, false);
 
-                            feature.setStyle(new ol.style.Style({
-                                image: new ol.style.Circle({
-                                    radius: 7,
-                                    fill: new ol.style.Fill({color: 'red'}),
-                                    stroke: new ol.style.Stroke({color: 'white', width: 2})
-                                })
-                            }));
+var allFeatures = [];
 
-                            feature.set('indirizzo', item.indirizzo);
-                            feature.set('prezzo_base', item.prezzo_base);
-                            feature.set('data_vendita', item.data_vendita);
-                            feature.set('url_annuncio', item.url_annuncio);
-                            feature.set('parsed_address', item.parsed_address);
+// Load initial data from "geocoded_italia.csv"
+fetch('geocoded_italia.csv')
+    .then(response => response.text())
+    .then(data => handleFileLoad({target: {result: data}}));
 
-                            var vectorSource = new ol.source.Vector({
-                                features: [feature]
-                            });
+function handleFileSelect(evt) {
+    var file = evt.target.files[0];
+    var reader = new FileReader();
+    reader.onload = handleFileLoad;
+    reader.readAsText(file);
+}
 
-                            var vectorLayer = new ol.layer.Vector({
-                                source: vectorSource
-                            });
+function handleFileLoad(evt) {
+    Papa.parse(evt.target.result, {
+        header: true,
+        dynamicTyping: true,
+        delimiter: "|",
+        complete: function(results) {
+            console.log(results)
+            results.data.forEach(function(item) {
+                if (item.coordinate) {
+                    var coordParts = item.coordinate.replace(/[\(\)]/g, '').split(',').map(Number);
+                    var coord = ol.proj.fromLonLat([coordParts[1], coordParts[0]]);
+                    var feature = new ol.Feature(new ol.geom.Point(coord));
 
-                            map.addLayer(vectorLayer);
-                        } else {
-                            var table = document.getElementById('data-table');
-                            var row = table.insertRow(-1);
-                            var cell1 = row.insertCell(0);
-                            var cell2 = row.insertCell(1);
-                            var cell3 = row.insertCell(2);
-                            var cell4 = row.insertCell(3);
-                            var cell5 = row.insertCell(4);
-                            cell1.innerHTML = item.indirizzo;
-                            cell2.innerHTML = item.prezzo_base;
-                            cell3.innerHTML = item.data_vendita;
-                            cell4.innerHTML = '<a href="' + item.url_annuncio + '" target="_blank">' + item.url_annuncio + '</a>';
-                            cell5.innerHTML = item.parsed_address;
-                        }
-                    });
+                    feature.setStyle(new ol.style.Style({
+                        image: new ol.style.Circle({
+                            radius: 7,
+                            fill: new ol.style.Fill({color: 'red'}),
+                            stroke: new ol.style.Stroke({color: 'white', width: 2})
+                        })
+                    }));
 
-                    var extent = ol.extent.boundingExtent(coordinates);
-                    map.getView().fit(extent, map.getSize());
+                    feature.set('indirizzo', item.indirizzo);
+                    feature.set('prezzo_base', item.prezzo_base);
+                    feature.set('data_vendita', item.data_vendita);
+                    feature.set('url_annuncio', item.url_annuncio);
+                    feature.set('parsed_address', item.parsed_address);
+
+                    allFeatures.push(feature);
                 }
             });
         }
+    });
+}
+
+function handleAddressInput(event) {
+    var inputAddress = event.target.value.toLowerCase();
+    var coordinates = [];
+
+    allFeatures.forEach(function(feature) {
+        var parsed_address = feature.get('indirizzo').toLowerCase();
+        if (parsed_address.includes(inputAddress)) {
+            var vectorSource = new ol.source.Vector({
+                features: [feature]
+            });
+
+            var vectorLayer = new ol.layer.Vector({
+                source: vectorSource
+            });
+
+            map.addLayer(vectorLayer);
+            coordinates.push(feature.getGeometry().getCoordinates());
+        }
+    });
+
+    if (coordinates.length > 0) {
+        var extent = ol.extent.boundingExtent(coordinates);
+        map.getView().fit(extent, map.getSize());
+    }
+}
+
+
+
+
 
         map.on('click', function(evt) {
             map.forEachFeatureAtPixel(evt.pixel, function(feature, layer) {
