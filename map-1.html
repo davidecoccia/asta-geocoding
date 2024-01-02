@@ -91,7 +91,7 @@ document.getElementById('submitButton').addEventListener('click', function(event
 var allFeatures = [];
 
 // Load initial data from "geocoded_italia.csv"
-fetch('geocoded_italia.csv')
+fetch('ALL_geocoded_italia.csv')
     .then(response => response.text())
     .then(data => handleFileLoad({target: {result: data}}));
 
