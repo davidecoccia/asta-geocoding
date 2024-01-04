@@ -40,6 +40,7 @@
     </style>
     <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src = "https://d3js.org/d3.v6.min.js"></script>
 </head>
 <body>
     <h2>CSV Map</h2>
@@ -91,7 +92,7 @@ document.getElementById('submitButton').addEventListener('click', function(event
 var allFeatures = [];
 
 // Load initial data from "geocoded_italia.csv"
-fetch('ALL_geocoded_italia.csv')
+fetch('JOIN_OMI_ALL_geocoded_italia.csv')
     .then(response => response.text())
     .then(data => handleFileLoad({target: {result: data}}));
 
@@ -109,16 +110,29 @@ function handleFileLoad(evt) {
         delimiter: "|",
         complete: function(results) {
             console.log(results)
+
+            // Find the min and max values of the ratio
+            var minRatio = d3.min(results.data, function(d) { return d.Abitazioni_di_tipo_economico_ratio; });
+            var maxRatio = d3.max(results.data, function(d) { return d.Abitazioni_di_tipo_economico_ratio; });
+
+            // Define your color scale here
+            var colorScale = d3.scaleLinear()
+                .domain([minRatio, maxRatio])  // Set the domain to the min and max values of the ratio
+                .range(['red', 'green']);  // Colors at the ends of the scale
+
             results.data.forEach(function(item) {
                 if (item.coordinate) {
                     var coordParts = item.coordinate.replace(/[\(\)]/g, '').split(',').map(Number);
-                    var coord = ol.proj.fromLonLat([coordParts[1], coordParts[0]]);
+                    var coord = ol.proj.fromLonLat([coordParts[0], coordParts[1]]);
                     var feature = new ol.Feature(new ol.geom.Point(coord));
+
+                    // If the ratio is null or undefined, set the color to grey
+                    var color = item.Abitazioni_di_tipo_economico_ratio == null ? 'grey' : colorScale(item.Abitazioni_di_tipo_economico_ratio);
 
                     feature.setStyle(new ol.style.Style({
                         image: new ol.style.Circle({
                             radius: 7,
-                            fill: new ol.style.Fill({color: 'red'}),
+                            fill: new ol.style.Fill({color: color}),
                             stroke: new ol.style.Stroke({color: 'white', width: 2})
                         })
                     }));
@@ -128,6 +142,9 @@ function handleFileLoad(evt) {
                     feature.set('data_vendita', item.data_vendita);
                     feature.set('url_annuncio', item.url_annuncio);
                     feature.set('parsed_address', item.parsed_address);
+                    feature.set('Abitazioni_di_tipo_economico_ratio', item.Abitazioni_di_tipo_economico_ratio); 
+                    feature.set('Compr_avg_Abitazioni_di_tipo_economico', item.Compr_avg_Abitazioni_di_tipo_economico);
+                    feature.set('Loc_avg_Abitazioni_di_tipo_economico', item.Loc_avg_Abitazioni_di_tipo_economico);
 
                     allFeatures.push(feature);
                 }
@@ -135,6 +152,7 @@ function handleFileLoad(evt) {
         }
     });
 }
+
 
 function handleAddressInput(event) {
     var inputAddress = event.target.value.toLowerCase();
@@ -166,19 +184,50 @@ function handleAddressInput(event) {
 
 
 
-        map.on('click', function(evt) {
-            map.forEachFeatureAtPixel(evt.pixel, function(feature, layer) {
-                var indirizzo = feature.get('indirizzo');
-                var prezzo_base = feature.get('prezzo_base');
-                var data_vendita = feature.get('data_vendita');
-                var url_annuncio = feature.get('url_annuncio');
-                var parsed_address = feature.get('parsed_address');
+map.on('click', function(evt) {
+    map.forEachFeatureAtPixel(evt.pixel, function(feature, layer) {
+        var indirizzo = feature.get('indirizzo');
+        var prezzo_base = feature.get('prezzo_base');
+        var data_vendita = feature.get('data_vendita');
+        var url_annuncio = feature.get('url_annuncio');
+        var parsed_address = feature.get('parsed_address');
+        var Abitazioni_di_tipo_economico_ratio = feature.get('Abitazioni_di_tipo_economico_ratio');
+        var Loc_avg_Abitazioni_di_tipo_economico = feature.get('Loc_avg_Abitazioni_di_tipo_economico');
+        var Compr_avg_Abitazioni_di_tipo_economico = feature.get('Compr_avg_Abitazioni_di_tipo_economico');
 
-                var info = "Indirizzo: " + indirizzo + "<br>Indirizzo geolocalizzato: " + parsed_address+ "<br>Prezzo Base: " + prezzo_base + "<br>Data Vendita: " + data_vendita + "<br>URL Annuncio: <a href='" + url_annuncio + "' target='_blank'>" + url_annuncio + "</a>";
-                document.getElementById('info').innerHTML = info;
-                document.getElementById('info').classList.add('active');
-            });
+        // Multiply the ratio by 100
+        var ratio = Abitazioni_di_tipo_economico_ratio * 100;
+        var redditivita_annua_lorda = (100*(Loc_avg_Abitazioni_di_tipo_economico*12)/Compr_avg_Abitazioni_di_tipo_economico).toFixed(2);
+
+        var info = "Indirizzo: " + indirizzo + 
+        "<br>Indirizzo geolocalizzato: " + parsed_address+ 
+        "<br>Prezzo Base: " + prezzo_base + 
+        "<br>Data Vendita: " + data_vendita + 
+        "<br>URL Annuncio: <a href='" + url_annuncio + 
+        "' target='_blank'>" + url_annuncio + "</a>" + 
+        "<br>Redditività annua lorda su dati OMI: " + redditivita_annua_lorda + "%";
+        document.getElementById('info').innerHTML = info;
+        document.getElementById('info').classList.add('active');
+
+        // Add a close button to the info window
+        var closeButton = document.createElement('button');
+        closeButton.textContent = 'Close';
+        closeButton.style.position = 'absolute';
+        closeButton.style.top = '0';
+        closeButton.style.right = '0';
+        closeButton.addEventListener('click', function() {
+            document.getElementById('info').classList.remove('active');
         });
+        document.getElementById('info').appendChild(closeButton);
+    });
+
+    // Prevent the click event from propagating to the map when the info window is clicked
+    document.getElementById('info').addEventListener('click', function(evt) {
+        evt.stopPropagation();
+    });
+});
+
+
     </script>
 </body>
 </html>
