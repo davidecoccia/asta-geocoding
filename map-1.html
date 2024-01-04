@@ -56,6 +56,7 @@
     <input type="file" id="csvFile" name="files"/>
     <input type="text" id="addressInput" placeholder="Scrivi parte dell'indirizzo...">
     <button id="submitButton">Cerca</button>
+    <button id="filterButton">Top 100</button>
     <div id="map" class="map"></div>
     <div id="info" class="overlay"></div>
     <script type="text/javascript">
@@ -107,8 +108,12 @@ function handleFileLoad(evt) {
             console.log(results)
 
             // Find the min and max values of the ratio
-            var minRatio = d3.min(results.data, function(d) { return d.Abitazioni_di_tipo_economico_ratio; });
-            var maxRatio = d3.max(results.data, function(d) { return d.Abitazioni_di_tipo_economico_ratio; });
+            var minRatio = d3.min(results.data, function(d) { 
+                return Math.max(d.Abitazioni_di_tipo_economico_ratio || 0, d.Abitazioni_civili_ratio || 0); 
+            });
+            var maxRatio = d3.max(results.data, function(d) { 
+                return Math.max(d.Abitazioni_di_tipo_economico_ratio || 0, d.Abitazioni_civili_ratio || 0); 
+            });
 
             // Define your color scale here
             var colorScale = d3.scaleLinear()
@@ -122,7 +127,7 @@ function handleFileLoad(evt) {
                     var feature = new ol.Feature(new ol.geom.Point(coord));
 
                     // If the ratio is null or undefined, set the color to grey
-                    var color = item.Abitazioni_di_tipo_economico_ratio == null ? 'grey' : colorScale(item.Abitazioni_di_tipo_economico_ratio);
+                    var color = (item.Abitazioni_di_tipo_economico_ratio == null && item.Abitazioni_civili_ratio == null) ? 'grey' : colorScale(Math.max(item.Abitazioni_di_tipo_economico_ratio || 0, item.Abitazioni_civili_ratio || 0));
 
                     feature.setStyle(new ol.style.Style({
                         image: new ol.style.Circle({
@@ -140,6 +145,9 @@ function handleFileLoad(evt) {
                     feature.set('Abitazioni_di_tipo_economico_ratio', item.Abitazioni_di_tipo_economico_ratio); 
                     feature.set('Compr_avg_Abitazioni_di_tipo_economico', item.Compr_avg_Abitazioni_di_tipo_economico);
                     feature.set('Loc_avg_Abitazioni_di_tipo_economico', item.Loc_avg_Abitazioni_di_tipo_economico);
+                    feature.set('Abitazioni_civili_ratio', item.Abitazioni_civili_ratio); 
+                    feature.set('Compr_avg_Abitazioni_civili', item.Compr_avg_Abitazioni_civili);
+                    feature.set('Loc_avg_Abitazioni_civili', item.Loc_avg_Abitazioni_civili);
 
                     allFeatures.push(feature);
                 }
@@ -147,6 +155,37 @@ function handleFileLoad(evt) {
         }
     });
 }
+
+document.getElementById('filterButton').addEventListener('click', function() {
+    // Sort the allFeatures array in descending order based on the max value
+    allFeatures.sort(function(a, b) {
+        var aValue = Math.max(a.get('Abitazioni_di_tipo_economico_ratio') || 0, a.get('Abitazioni_civili_ratio') || 0);
+        var bValue = Math.max(b.get('Abitazioni_di_tipo_economico_ratio') || 0, b.get('Abitazioni_civili_ratio') || 0);
+        return bValue - aValue;
+    });
+
+    // Get the first 100 items
+    var top100Features = allFeatures.slice(0, 100);
+
+    var vectorSource = new ol.source.Vector({
+        features: top100Features
+    });
+
+    var vectorLayer = new ol.layer.Vector({
+        source: vectorSource
+    });
+    map.addLayer(vectorLayer);
+
+    // Calculate the extent of the top 100 features
+    var extent = ol.extent.createEmpty();
+    top100Features.forEach(function(feature) {
+        ol.extent.extend(extent, feature.getGeometry().getExtent());
+    });
+
+    // Fit the view to the extent of the top 100 features
+    map.getView().fit(extent, map.getSize());
+});
+
 
 
 function handleAddressInput(event) {
@@ -189,10 +228,15 @@ map.on('click', function(evt) {
         var Abitazioni_di_tipo_economico_ratio = feature.get('Abitazioni_di_tipo_economico_ratio');
         var Loc_avg_Abitazioni_di_tipo_economico = feature.get('Loc_avg_Abitazioni_di_tipo_economico');
         var Compr_avg_Abitazioni_di_tipo_economico = feature.get('Compr_avg_Abitazioni_di_tipo_economico');
+        var Abitazioni_civili_ratio = feature.get('Abitazioni_civili_ratio');
+        var Compr_avg_Abitazioni_civili = feature.get('Compr_avg_Abitazioni_civili');
+        var Loc_avg_Abitazioni_civili = feature.get('Loc_avg_Abitazioni_civili');
+        
 
         // Multiply the ratio by 100
         var ratio = Abitazioni_di_tipo_economico_ratio * 100;
-        var redditivita_annua_lorda = (100*(Loc_avg_Abitazioni_di_tipo_economico*12)/Compr_avg_Abitazioni_di_tipo_economico).toFixed(2);
+        var ec_redditivita_annua_lorda = (100*(Loc_avg_Abitazioni_di_tipo_economico*12)/Compr_avg_Abitazioni_di_tipo_economico).toFixed(2);
+        var civ_redditivita_annua_lorda = (100*(Loc_avg_Abitazioni_civili*12)/Compr_avg_Abitazioni_civili).toFixed(2);
 
         var info = "Indirizzo: " + indirizzo + 
         "<br>Indirizzo geolocalizzato: " + parsed_address+ 
@@ -200,7 +244,9 @@ map.on('click', function(evt) {
         "<br>Data Vendita: " + data_vendita + 
         "<br>URL Annuncio: <a href='" + url_annuncio + 
         "' target='_blank'>" + url_annuncio + "</a>" + 
-        "<br>Redditività annua lorda su dati OMI: " + redditivita_annua_lorda + "%";
+        "<br>Redditività su dati OMI: " +
+        "<br>Abitazioni Economiche: " + ec_redditivita_annua_lorda + "%"+
+        "<br>Abitazioni Civili: " + civ_redditivita_annua_lorda + "%";
         document.getElementById('info').innerHTML = info;
         document.getElementById('info').classList.add('active');
 
