@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CSV Map</title>
+    <title>Asta Map</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css" type="text/css">
     <style>
@@ -52,10 +52,12 @@
     <script src = "https://d3js.org/d3.v6.min.js"></script>
 </head>
 <body>
-    <h2>CSV Map</h2>
+    <h2>Asta Map</h2>
     <input type="file" id="csvFile" name="files"/>
     <input type="text" id="addressInput" placeholder="Scrivi parte dell'indirizzo...">
     <button id="submitButton">Cerca</button>
+    <input type="number" id="daysInput" value="365" min="0" placeholder="Filtra per gli ultimi giorni">
+    <button id="dayFilterButton">Filter days</button>
     <button id="filterButton">Top 100</button>
     <div id="map" class="map"></div>
     <div id="info" class="overlay"></div>
@@ -74,6 +76,30 @@
             interactions: ol.interaction.defaults.defaults({ onFocusOnly: true })
         });
         
+
+        document.getElementById('csvFile').addEventListener('change', function(evt) {
+            var file = evt.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var contents = e.target.result;
+                var data = Papa.parse(contents, {header: true}).data;
+
+                // Get the number of days from the input
+                var days = document.getElementById('daysInput').value || 365;
+                var cutoff = new Date();
+                cutoff.setDate(cutoff.getDate() - days);
+
+                // Filter the data
+                data = data.filter(function(row) {
+                    var date = row['data_aggiornamento'] ? new Date(row['data_aggiornamento']) : new Date();
+                    date.setDate(date.getDate() - 30); // If "data_aggiornamento" is not there, consider it as 30 days before today
+                    return date >= cutoff;
+                });
+
+                // ... use the filtered data ...
+            };
+            reader.readAsText(file);
+        });
 
         document.getElementById('csvFile').addEventListener('change', handleFileSelect, false);
 document.getElementById('addressInput').addEventListener('keyup', function(event) {
@@ -148,6 +174,7 @@ function handleFileLoad(evt) {
                     feature.set('Abitazioni_civili_ratio', item.Abitazioni_civili_ratio); 
                     feature.set('Compr_avg_Abitazioni_civili', item.Compr_avg_Abitazioni_civili);
                     feature.set('Loc_avg_Abitazioni_civili', item.Loc_avg_Abitazioni_civili);
+                    feature.set('data_aggiornamento', item.data_aggiornamento);
 
                     allFeatures.push(feature);
                 }
@@ -185,6 +212,51 @@ document.getElementById('filterButton').addEventListener('click', function() {
     // Fit the view to the extent of the top 100 features
     map.getView().fit(extent, map.getSize());
 });
+
+document.getElementById('dayFilterButton').addEventListener('click', function() {
+     // Get the number of days from the input
+     var days = document.getElementById('daysInput').value || 365;
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    // Filter the allFeatures array
+    allFeatures = allFeatures.filter(function(feature) {
+        var dateStr = feature.get('data_aggiornamento');
+        var date;
+        if (dateStr) {
+            // Parse the date string into a Date object
+            var parts = dateStr.split('-');
+            date = new Date(parts[0], parts[1] - 1, parts[2]);
+        } else {
+            date = new Date();
+            date.setDate(date.getDate() - 30); // If "data_aggiornamento" is not there, consider it as 30 days before today
+        }
+
+        // Compare only the year, month, and day parts of the dates
+        return date.getFullYear() > cutoff.getFullYear() ||
+            (date.getFullYear() === cutoff.getFullYear() && date.getMonth() > cutoff.getMonth()) ||
+            (date.getFullYear() === cutoff.getFullYear() && date.getMonth() === cutoff.getMonth() && date.getDate() >= cutoff.getDate());
+    });
+            var vectorSource = new ol.source.Vector({
+        features: allFeatures
+    });
+
+    var vectorLayer = new ol.layer.Vector({
+        source: vectorSource
+    });
+    map.addLayer(vectorLayer);
+
+
+    var extent = ol.extent.createEmpty();
+    allFeatures.forEach(function(feature) {
+        ol.extent.extend(extent, feature.getGeometry().getExtent());
+    });
+
+    // Fit the view to the extent of the top 100 features
+    map.getView().fit(extent, map.getSize());
+});
+
+
 
 
 
@@ -244,6 +316,8 @@ map.on('click', function(evt) {
         "<br>Data Vendita: " + data_vendita + 
         "<br>URL Annuncio: <a href='" + url_annuncio + 
         "' target='_blank'>" + url_annuncio + "</a>" + 
+        "<br>Costo medio MQ Abitazioni Economiche: " + Compr_avg_Abitazioni_di_tipo_economico +
+        "<br>Costo medio MQ Abitazioni Civili: " + Compr_avg_Abitazioni_civili +
         "<br>Redditività su dati OMI: " +
         "<br>Abitazioni Economiche: " + ec_redditivita_annua_lorda + "%"+
         "<br>Abitazioni Civili: " + civ_redditivita_annua_lorda + "%";
